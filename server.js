@@ -36,35 +36,32 @@ app.post('/upgrade', async (req, res) => {
     const otsBytes = Buffer.from(ots, 'base64');
     const detached = OpenTimestamps.DetachedTimestampFile.deserialize(otsBytes);
     
-    // Intentar upgrade
     await OpenTimestamps.upgrade(detached);
     
-    // Serializar el .ots actualizado
     const otsActualizado = Buffer.from(detached.serializeToBytes()).toString('base64');
     
-    // Verificar si hay attestation de Bitcoin
-    const timestamp = detached.timestamp;
+    // Buscar Bitcoin attestation recursivamente
     let confirmado = false;
     let bloque = 0;
-    let timestampUtc = '';
 
-    function buscarAttestation(ts) {
-      for (const [op, subTs] of ts.ops) {
-        if (subTs.attestations) {
-          for (const att of subTs.attestations) {
-            if (att.type === 'BitcoinBlockHeaderAttestation') {
-              confirmado = true;
-              bloque = att.height;
-              return;
-            }
-          }
+    function buscarEnTimestamp(ts) {
+      if (!ts) return;
+      for (const att of ts.attestations) {
+        const attStr = att.toString();
+        if (attStr.includes('BitcoinBlockHeader') || att.constructor.name === 'BitcoinBlockHeaderAttestation') {
+          confirmado = true;
+          bloque = att.height || 0;
+          return;
         }
-        buscarAttestation(subTs);
+      }
+      for (const [op, subTs] of ts.ops) {
+        buscarEnTimestamp(subTs);
+        if (confirmado) return;
       }
     }
-    buscarAttestation(timestamp);
+    buscarEnTimestamp(detached.timestamp);
 
-    res.json({ confirmado, bloque, timestampUtc, otsActualizado });
+    res.json({ confirmado, bloque, otsActualizado });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
