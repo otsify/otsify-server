@@ -28,6 +28,48 @@ app.post('/stamp', async (req, res) => {
   }
 });
 
+app.post('/upgrade', async (req, res) => {
+  try {
+    const { ots } = req.body;
+    if (!ots) return res.status(400).json({ error: 'Falta ots' });
+
+    // Decodificar base64 a bytes
+    const otsBytes = Buffer.from(ots, 'base64');
+    
+    // Deserializar el .ots
+    const detached = OpenTimestamps.DetachedTimestampFile.deserialize(otsBytes);
+    
+    // Intentar upgrade (consulta al calendario)
+    await OpenTimestamps.upgrade(detached);
+    
+    // Verificar si hay attestation de Bitcoin
+    const context = new OpenTimestamps.VerifyContext();
+    const results = await OpenTimestamps.verify(detached, context);
+    
+    // Serializar el .ots actualizado
+    const otsActualizado = Buffer.from(detached.serializeToBytes()).toString('base64');
+    
+    if (results && Object.keys(results).length > 0) {
+      const timestamp = Object.values(results)[0];
+      const bloque = timestamp.height || 0;
+      const timestampUtc = new Date(timestamp.timestamp * 1000).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+      res.json({ 
+        confirmado: true, 
+        bloque, 
+        timestampUtc,
+        otsActualizado 
+      });
+    } else {
+      res.json({ 
+        confirmado: false,
+        otsActualizado 
+      });
+    }
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 app.get('/health', (req, res) => res.json({ ok: true }));
 
 const PORT = process.env.PORT || 3000;
