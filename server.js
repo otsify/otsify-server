@@ -17,17 +17,33 @@ app.use(express.json({ limit: '10mb' }));
 // ── /stamp ───────────────────────────────────────────────────────────────────
 app.post('/stamp', async (req, res) => {
   try {
-    const { contenido } = req.body;
+    const { contenido, calendario } = req.body;
     if (!contenido) return res.status(400).json({ error: 'Falta contenido' });
+
+    const CALENDARIOS = {
+      alice:  'https://alice.btc.calendar.opentimestamps.org',
+      bob:    'https://bob.btc.calendar.opentimestamps.org',
+      finney: 'https://finney.calendar.eternitywall.com',
+    };
+
     const encoder = new TextEncoder();
     const bytes = encoder.encode(contenido);
+
     const detached = OpenTimestamps.DetachedTimestampFile.fromBytes(
       new OpenTimestamps.Ops.OpSHA256(),
       bytes
     );
-    await OpenTimestamps.stamp(detached);
+
+    // Si se especifica un calendario, usar solo ese
+    const opciones = calendario && CALENDARIOS[calendario]
+      ? { calendars: [CALENDARIOS[calendario]] }
+      : {};
+
+    await OpenTimestamps.stamp(detached, opciones);
+
     const otsBytes = detached.serializeToBytes();
     const otsBase64 = Buffer.from(otsBytes).toString('base64');
+
     res.json({ ots: otsBase64 });
   } catch (e) {
     res.status(500).json({ error: e.message });
